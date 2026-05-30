@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>天织</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      background-color: #fefcfb;
+      background-image: none;
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      color: #e8f1ff;
+    }
+
+    #app {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+    }
+
+    #app canvas {
+      display: block;
+    }
+
+    #toolbar {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      width: 320px;
+      padding: 16px;
+      border: 1px solid rgba(120, 180, 255, 0.28);
+      border-radius: 16px;
+      background: rgba(8, 17, 31, 0.82);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    #toolbar h1 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+
+    #toolbar .author {
+      margin: 0 0 12px;
+      font-size: 13px;
+      font-weight: 400;
+      color: #9fb8d6;
+      letter-spacing: 0.02em;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 10px;
+      align-items: center;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+
+    select,
+    input[type="range"],
+    button {
+      width: 100%;
+    }
+
+    select,
+    button {
+      height: 34px;
+      border: 1px solid rgba(120, 180, 255, 0.32);
+      border-radius: 10px;
+      background: rgba(18, 32, 55, 0.92);
+      color: #e8f1ff;
+      outline: none;
+    }
+
+    button {
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      background: rgba(36, 72, 118, 0.92);
+      border-color: rgba(150, 210, 255, 0.65);
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .hint {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(120, 180, 255, 0.18);
+      color: #9fb8d6;
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
+    #status {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 10;
+      max-width: 520px;
+      padding: 12px 14px;
+      border: 1px solid rgba(120, 180, 255, 0.24);
+      border-radius: 14px;
+      background: rgba(8, 17, 31, 0.74);
+      color: #cfe4ff;
+      font-size: 12px;
+      line-height: 1.6;
+      backdrop-filter: blur(10px);
+    }
+
+    #importFileInput {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app"></div>
+
+  <aside id="toolbar">
+    <h1>天织</h1>
+    <p class="author">作者：天织 团队</p>
+
+    <div class="row">
+      <label for="layerSelect">当前层</label>
+      <select id="layerSelect"></select>
+    </div>
+
+    <div class="row">
+      <label for="placeModeSelect">放置类型</label>
+      <select id="placeModeSelect">
+        <option value="frame">框架</option>
+        <option value="inner">内部房体</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="radiusRange">网格半径</label>
+      <input id="radiusRange" type="range" min="1" max="6" value="4" />
+    </div>
+
+    <div class="buttons">
+      <button id="deleteBtn">删除选中</button>
+      <button id="clearBtn">清空当前层</button>
+    </div>
+
+    <div class="buttons">
+      <button id="toggleGridBtn">显示/隐藏网格</button>
+      <button id="exportBtn">导出布局 JSON</button>
+    </div>
+
+    <div class="buttons">
+      <button id="importBtn">导入布局 JSON</button>
+      <button id="clearAllBtn">清空全部</button>
+    </div>
+
+    <input id="importFileInput" type="file" accept="application/json,.json" />
+
+    <div class="hint">
+      操作说明：选择放置类型后，左键点击六边形格子放置模型，内部房体只能放在框架里
+    </div>
+  </aside>
+
+  <div id="status">加载中...</div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    //你好~石山勿喷
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+
+    const app = document.getElementById('app');
+    const status = document.getElementById('status');
+    const layerSelect = document.getElementById('layerSelect');
+    const placeModeSelect = document.getElementById('placeModeSelect');
+    const radiusRange = document.getElementById('radiusRange');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    const toggleGridBtn = document.getElementById('toggleGridBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const importFileInput = document.getElementById('importFileInput');
+
+    const CONFIG = {
+      layerCount: 6,
+      layerGap: 1.2,
+      hexSize: 1.0,
+
+      frameUrl: './frame.obj',
+      innerUrl: './inner.obj',
+
+      backgroundImageUrl: '',// 需要背景图时改成 './background.png'
+      backgroundColor: 0xfefcfb,
+
+      frameNormalizedSize: 1.45,
+      innerNormalizedSize: 1.45,
+
+      modelScale: 1.4,
+
+      frameInitialRotationDeg: 30,
+      innerInitialRotationDeg: 0,
+
+      fallbackHeight: 0.18,
+
+      frameColor: 0x241627,
+      innerColor: 0xa83a67,
+
+      selectedEmissive: 0x1e9dff,
+      frameNoGridColor: 0x241627,
+      innerNoGridColor: 0xa83a67,
+
+      baseGridFillColor: 0xe39980,
+      baseGridEdgeColor: 0xc98770,
+      baseGridFillOpacity: 0.18,
+      baseGridEdgeOpacity: 0.72,
+
+      activeGridFillColor: 0x1e9dff,
+      activeGridEdgeColor: 0x7fd3ff,
+      inactiveGridFillColor: 0x315575,
+      inactiveGridEdgeColor: 0x355f86,
+      activeGridFillOpacity: 0.18,
+      activeGridEdgeOpacity: 0.72,
+      inactiveGridFillOpacity: 0.06,
+      inactiveGridEdgeOpacity: 0.22,
+
+      fogEnabled: true,
+      fogNear: 80,
+      fogFar: 260,
+      cameraNear: 0.05,
+      cameraFar: 5000,
+      controlsMinDistance: 1,
+      controlsMaxDistance: 500,
+
+      clickMoveTolerance: 5
+    };
+
+    let currentLayer = 0;
+    let gridRadius = Number(radiusRange.value);
+    const modelScale = CONFIG.modelScale;
+
+    let frameTemplate = null;
+    let innerTemplate = null;
+
+    let selectedKey = null;
+    let selectedKind = null;
+
+    let gridVisible = true;
+
+    let pointerDownInfo = null;
+
+    const cells = new Map();
+    const placedFrames = new Map();
+    const placedInners = new Map();
+
+    const gridGroup = new THREE.Group();
+    const placementGroup = new THREE.Group();
+
+    const scene = new THREE.Scene();
+
+    scene.background = null;
+
+    if (CONFIG.fogEnabled) {
+      scene.fog = new THREE.Fog(
+        CONFIG.backgroundColor,
+        CONFIG.fogNear,
+        CONFIG.fogFar
+      );
+    } else {
+      scene.fog = null;
+    }
+
+    applyPageBackground();
+
+    const camera = new THREE.PerspectiveCamera(
+      48,
+      window.innerWidth / window.innerHeight,
+      CONFIG.cameraNear,
+      CONFIG.cameraFar
+    );
+    camera.position.set(7.5, 8.5, 10.5);
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true
+    });
+
+    renderer.setClearColor(CONFIG.backgroundColor, 0);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    app.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 2.2, 0);
+    controls.minDistance = CONFIG.controlsMinDistance;
+    controls.maxDistance = CONFIG.controlsMaxDistance;
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    scene.add(ambientLight);
+
+    const mainLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    mainLight.position.set(0, 20, 0);
+    mainLight.target.position.set(0, 0, 0);
+    mainLight.castShadow = true;
+    mainLight.shadow.mapSize.set(2048, 2048);
+    scene.add(mainLight);
+    scene.add(mainLight.target);
+
+    const fillLight = new THREE.PointLight(0x6ab7ff, 1.2, 18);
+    fillLight.position.set(-6, 5, -7);
+    scene.add(fillLight);
+
+    scene.add(gridGroup);
+    scene.add(placementGroup);
+
+    const axesHelper = new THREE.AxesHelper(3);
+    axesHelper.position.set(-6, 0, -6);
+    scene.add(axesHelper);
+
+    initLayerSelect();
+    buildGrid();
+    loadModels();
+    bindEvents();
+    animate();
+
+    function applyPageBackground() {
+      const backgroundColorHex = `#${CONFIG.backgroundColor.toString(16).padStart(6, '0')}`;
+      const backgroundImageUrl = String(CONFIG.backgroundImageUrl || '').trim();
+
+      document.body.style.backgroundColor = backgroundColorHex;
+
+      if (backgroundImageUrl) {
+        document.body.style.backgroundImage = `url("${backgroundImageUrl}")`;
+      } else {
+        document.body.style.backgroundImage = 'none';
+      }
+    }
+
+    function initLayerSelect() {
+      layerSelect.innerHTML = '';
+
+      for (let i = 0; i < CONFIG.layerCount; i++) {
+        const option = document.createElement('option');
+        option.value = String(i);
+        option.textContent = `第 ${i + 1} 层`;
+        layerSelect.appendChild(option);
+      }
+    }
+
+    function switchLayer(layerIndex) {
+      if (
+        !Number.isInteger(layerIndex) ||
+        layerIndex < 0 ||
+        layerIndex >= CONFIG.layerCount
+      ) {
+        return;
+      }
+
+      currentLayer = layerIndex;
+      layerSelect.value = String(layerIndex);
+      refreshLayerVisibility();
+      updateStatus();
+    }
+
+    function getLayerY(layer) {
+      return layer * CONFIG.layerGap;
+    }
+
+    function axialToWorld(q, r, layer) {
+      const size = CONFIG.hexSize;
+      const x = size * Math.sqrt(3) * (q + r / 2);
+      const z = size * 1.5 * r;
+      const y = getLayerY(layer);
+      return new THREE.Vector3(x, y, z);
+    }
+
+    function keyOf(layer, q, r) {
+      return `${layer}:${q}:${r}`;
+    }
+
+    function getGridCellStyle(layer) {
+      const isBaseLayer = layer === 0;
+      const isCurrent = layer === currentLayer;
+
+      if (isBaseLayer) {
+        return {
+          fillColor: CONFIG.baseGridFillColor,
+          edgeColor: CONFIG.baseGridEdgeColor,
+          fillOpacity: CONFIG.baseGridFillOpacity,
+          edgeOpacity: CONFIG.baseGridEdgeOpacity
+        };
+      }
+
+      return {
+        fillColor: isCurrent ? CONFIG.activeGridFillColor : CONFIG.inactiveGridFillColor,
+        edgeColor: isCurrent ? CONFIG.activeGridEdgeColor : CONFIG.inactiveGridEdgeColor,
+        fillOpacity: isCurrent ? CONFIG.activeGridFillOpacity : CONFIG.inactiveGridFillOpacity,
+        edgeOpacity: isCurrent ? CONFIG.activeGridEdgeOpacity : CONFIG.inactiveGridEdgeOpacity
+      };
+    }
+
+    function buildGrid() {
+      gridGroup.clear();
+      cells.clear();
+
+      for (let layer = 0; layer < CONFIG.layerCount; layer++) {
+        const layerGroup = new THREE.Group();
+        layerGroup.name = `layer-grid-${layer}`;
+        gridGroup.add(layerGroup);
+
+        for (let q = -gridRadius; q <= gridRadius; q++) {
+          const r1 = Math.max(-gridRadius, -q - gridRadius);
+          const r2 = Math.min(gridRadius, -q + gridRadius);
+
+          for (let r = r1; r <= r2; r++) {
+            const key = keyOf(layer, q, r);
+            const center = axialToWorld(q, r, layer);
+            const cell = createHexCellMesh(layer, q, r, center);
+            cells.set(key, cell);
+            layerGroup.add(cell);
+          }
+        }
+      }
+
+      refreshLayerVisibility();
+      updateStatus();
+    }
+
+    function createHexCellMesh(layer, q, r, center) {
+      const style = getGridCellStyle(layer);
+
+      const shape = new THREE.Shape();
+      const points = [];
+
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.PI / 180 * (60 * i - 30);
+        points.push(new THREE.Vector2(
+          CONFIG.hexSize * Math.cos(angle),
+          CONFIG.hexSize * Math.sin(angle)
+        ));
+      }
+
+      shape.moveTo(points[0].x, points[0].y);
+
+      for (let i = 1; i < points.length; i++) {
+        shape.lineTo(points[i].x, points[i].y);
+      }
+
+      shape.closePath();
+
+      const geometry = new THREE.ShapeGeometry(shape);
+      geometry.rotateX(-Math.PI / 2);
+
+      const material = new THREE.MeshBasicMaterial({
+        color: style.fillColor,
+        transparent: true,
+        opacity: style.fillOpacity,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(center);
+      mesh.userData = {
+        type: 'cell',
+        layer,
+        q,
+        r,
+        key: keyOf(layer, q, r)
+      };
+
+      const edgeGeometry = new THREE.EdgesGeometry(geometry);
+      const edgeMaterial = new THREE.LineBasicMaterial({
+        color: style.edgeColor,
+        transparent: true,
+        opacity: style.edgeOpacity
+      });
+
+      const edge = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+      edge.userData = { type: 'cellEdge' };
+      mesh.add(edge);
+
+      return mesh;
+    }
+
+    function loadModels() {
+      loadFrameObj();
+      loadInnerObj();
+    }
+
+    function loadFrameObj() {
+      const loader = new OBJLoader();
+
+      loader.load(
+        CONFIG.frameUrl,
+        obj => {
+          frameTemplate = normalizeModel(obj, {
+            normalizedSize: CONFIG.frameNormalizedSize,
+            color: CONFIG.frameColor
+          });
+          updateStatusMessage('frame.obj 加载成功。');
+        },
+        undefined,
+        () => {
+          frameTemplate = createFallbackFrame();
+          updateStatusMessage('未找到 frame.obj，使用占位模型。');
+        }
+      );
+    }
+
+    function loadInnerObj() {
+      const loader = new OBJLoader();
+
+      loader.load(
+        CONFIG.innerUrl,
+        obj => {
+          innerTemplate = normalizeModel(obj, {
+            normalizedSize: CONFIG.innerNormalizedSize,
+            color: CONFIG.innerColor
+          });
+          updateStatusMessage('inner.obj 加载成功。');
+        },
+        undefined,
+        () => {
+          innerTemplate = createFallbackInner();
+          updateStatusMessage('未找到 inner.obj，使用占位模型。');
+        }
+      );
+    }
+
+    function updateStatusMessage(message) {
+      status.textContent = message;
+      setTimeout(updateStatus, 800);
+    }
+
+    function normalizeModel(obj, options) {
+      const normalizedSize = options.normalizedSize;
+      const color = options.color;
+
+      obj.updateMatrixWorld(true);
+
+      const rawBox = new THREE.Box3().setFromObject(obj);
+      const rawSize = new THREE.Vector3();
+      rawBox.getSize(rawSize);
+
+      const maxAxis = Math.max(rawSize.x, rawSize.y, rawSize.z) || 1;
+      const normalizeScale = normalizedSize / maxAxis;
+
+      obj.scale.setScalar(normalizeScale);
+      obj.updateMatrixWorld(true);
+
+      const scaledBox = new THREE.Box3().setFromObject(obj);
+      const scaledCenter = new THREE.Vector3();
+      scaledBox.getCenter(scaledCenter);
+
+      obj.position.x -= scaledCenter.x;
+      obj.position.z -= scaledCenter.z;
+      obj.position.y -= scaledBox.min.y;
+
+      obj.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          child.material = new THREE.MeshStandardMaterial({
+            color,
+            metalness: 0.25,
+            roughness: 0.38,
+            emissive: 0x08111f,
+            emissiveIntensity: 0.12
+          });
+        }
+      });
+
+      const wrapper = new THREE.Group();
+      wrapper.add(obj);
+
+      return wrapper;
+    }
+
+    function createFallbackFrame() {
+      const group = new THREE.Group();
+
+      const material = new THREE.MeshStandardMaterial({
+        color: CONFIG.frameColor,
+        metalness: 0.2,
+        roughness: 0.42
+      });
+
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.PI / 180 * (60 * i);
+        const nextAngle = Math.PI / 180 * (60 * (i + 1));
+
+        const p1 = new THREE.Vector3(
+          CONFIG.hexSize * 0.72 * Math.cos(angle),
+          CONFIG.fallbackHeight,
+          CONFIG.hexSize * 0.72 * Math.sin(angle)
+        );
+
+        const p2 = new THREE.Vector3(
+          CONFIG.hexSize * 0.72 * Math.cos(nextAngle),
+          CONFIG.fallbackHeight,
+          CONFIG.hexSize * 0.72 * Math.sin(nextAngle)
+        );
+
+        const bar = createBarBetween(p1, p2, 0.055, material);
+        group.add(bar);
+      }
+
+      return normalizeModel(group, {
+        normalizedSize: CONFIG.frameNormalizedSize,
+        color: CONFIG.frameColor
+      });
+    }
+
+    function createFallbackInner() {
+      const group = new THREE.Group();
+
+      const material = new THREE.MeshStandardMaterial({
+        color: CONFIG.innerColor,
+        metalness: 0.08,
+        roughness: 0.55,
+        transparent: true,
+        opacity: 0.82
+      });
+
+      const geometry = new THREE.CylinderGeometry(
+        CONFIG.hexSize * 0.56,
+        CONFIG.hexSize * 0.56,
+        0.16,
+        6
+      );
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.rotation.y = Math.PI / 6;
+      mesh.position.y = 0.08;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      group.add(mesh);
+
+      return normalizeModel(group, {
+        normalizedSize: CONFIG.innerNormalizedSize,
+        color: CONFIG.innerColor
+      });
+    }
+
+    function createBarBetween(p1, p2, radius, material) {
+      const dir = new THREE.Vector3().subVectors(p2, p1);
+      const length = dir.length();
+
+      const geometry = new THREE.CylinderGeometry(radius, radius, length, 12);
+      const mesh = new THREE.Mesh(geometry, material);
+
+      const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+      mesh.position.copy(mid);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      return mesh;
+    }
+
+    function placeByMode(cellData) {
+      const mode = placeModeSelect.value;
+
+      if (mode === 'frame') {
+        placeFrame(cellData);
+      } else {
+        placeInner(cellData);
+      }
+    }
+
+    function placeFrame(cellData) {
+      if (!frameTemplate) return;
+
+      const { layer, q, r, key } = cellData;
+
+      if (placedFrames.has(key)) {
+        selectObject(key, 'frame');
+        return;
+      }
+
+      const obj = frameTemplate.clone(true);
+
+      obj.position.copy(axialToWorld(q, r, layer));
+      obj.scale.setScalar(modelScale);
+      obj.rotation.y = THREE.MathUtils.degToRad(CONFIG.frameInitialRotationDeg);
+
+      obj.userData = {
+        type: 'modelRoot',
+        kind: 'frame',
+        layer,
+        q,
+        r,
+        key
+      };
+
+      obj.traverse(child => {
+        child.userData.parentKey = key;
+        child.userData.kind = 'frame';
+
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      placementGroup.add(obj);
+      placedFrames.set(key, obj);
+      selectObject(key, 'frame');
+      updateStatus();
+    }
+
+    function placeInner(cellData) {
+      if (!innerTemplate) return;
+
+      const { layer, q, r, key } = cellData;
+
+      if (!placedFrames.has(key)) {
+        status.textContent = '请先在这个格子放置框架，然后再放置内部房体。';
+        return;
+      }
+
+      if (placedInners.has(key)) {
+        selectObject(key, 'inner');
+        return;
+      }
+
+      const obj = innerTemplate.clone(true);
+
+      obj.position.copy(axialToWorld(q, r, layer));
+      obj.scale.setScalar(modelScale);
+      obj.rotation.y = THREE.MathUtils.degToRad(CONFIG.innerInitialRotationDeg);
+
+      obj.userData = {
+        type: 'modelRoot',
+        kind: 'inner',
+        layer,
+        q,
+        r,
+        key
+      };
+
+      obj.traverse(child => {
+        child.userData.parentKey = key;
+        child.userData.kind = 'inner';
+
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      placementGroup.add(obj);
+      placedInners.set(key, obj);
+      selectObject(key, 'inner');
+      updateStatus();
+    }
+
+    function addImportedFrame(layer, q, r) {
+      if (!frameTemplate) return false;
+
+      const key = keyOf(layer, q, r);
+
+      if (placedFrames.has(key)) {
+        return true;
+      }
+
+      const obj = frameTemplate.clone(true);
+
+      obj.position.copy(axialToWorld(q, r, layer));
+      obj.scale.setScalar(modelScale);
+      obj.rotation.y = THREE.MathUtils.degToRad(CONFIG.frameInitialRotationDeg);
+
+      obj.userData = {
+        type: 'modelRoot',
+        kind: 'frame',
+        layer,
+        q,
+        r,
+        key
+      };
+
+      obj.traverse(child => {
+        child.userData.parentKey = key;
+        child.userData.kind = 'frame';
+
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      placementGroup.add(obj);
+      placedFrames.set(key, obj);
+
+      return true;
+    }
+
+    function addImportedInner(layer, q, r) {
+      if (!innerTemplate) return false;
+
+      const key = keyOf(layer, q, r);
+
+      if (!placedFrames.has(key)) {
+        addImportedFrame(layer, q, r);
+      }
+
+      if (placedInners.has(key)) {
+        return true;
+      }
+
+      const obj = innerTemplate.clone(true);
+
+      obj.position.copy(axialToWorld(q, r, layer));
+      obj.scale.setScalar(modelScale);
+      obj.rotation.y = THREE.MathUtils.degToRad(CONFIG.innerInitialRotationDeg);
+
+      obj.userData = {
+        type: 'modelRoot',
+        kind: 'inner',
+        layer,
+        q,
+        r,
+        key
+      };
+
+      obj.traverse(child => {
+        child.userData.parentKey = key;
+        child.userData.kind = 'inner';
+
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      placementGroup.add(obj);
+      placedInners.set(key, obj);
+
+      return true;
+    }
+
+    function selectObject(key, kind) {
+      selectedKey = key;
+      selectedKind = kind;
+
+      for (const [itemKey, obj] of placedFrames) {
+        const [layer] = itemKey.split(':').map(Number);
+
+        setObjectEmphasis(obj, {
+          selected: itemKey === selectedKey && selectedKind === 'frame',
+          activeLayer: layer === currentLayer,
+          kind: 'frame'
+        });
+      }
+
+      for (const [itemKey, obj] of placedInners) {
+        const [layer] = itemKey.split(':').map(Number);
+
+        setObjectEmphasis(obj, {
+          selected: itemKey === selectedKey && selectedKind === 'inner',
+          activeLayer: layer === currentLayer,
+          kind: 'inner'
+        });
+      }
+
+      updateStatus();
+    }
+
+    function makeCurrentLayerCellDataFromKey(hitKey) {
+      const [, q, r] = hitKey.split(':').map(Number);
+      const key = keyOf(currentLayer, q, r);
+
+      return {
+        type: 'cell',
+        layer: currentLayer,
+        q,
+        r,
+        key
+      };
+    }
+
+    function setObjectEmphasis(obj, options) {
+      const { selected, activeLayer, kind } = options;
+
+      obj.traverse(child => {
+        if (!child.isMesh || !child.material) return;
+
+        child.material = child.material.clone();
+
+        if (!gridVisible) {
+          child.material.color = new THREE.Color(
+            kind === 'frame' ? CONFIG.frameNoGridColor : CONFIG.innerNoGridColor
+          );
+
+          child.material.emissive = new THREE.Color(0x223344);
+          child.material.emissiveIntensity = selected ? 0.42 : 0.22;
+          child.material.opacity = 1;
+          child.material.transparent = false;
+          return;
+        }
+
+        child.material.color = new THREE.Color(
+          kind === 'frame' ? CONFIG.frameColor : CONFIG.innerColor
+        );
+
+        child.material.emissive = new THREE.Color(
+          selected ? CONFIG.selectedEmissive : activeLayer ? 0x061626 : 0x000000
+        );
+
+        child.material.emissiveIntensity = selected ? 0.38 : activeLayer ? 0.08 : 0.02;
+        child.material.opacity = activeLayer ? 1 : 0.35;
+        child.material.transparent = !activeLayer;
+      });
+    }
+
+    function removeObject(key, kind) {
+      if (kind === 'frame') {
+        removeFrame(key);
+      } else if (kind === 'inner') {
+        removeInner(key);
+      }
+
+      updateStatus();
+    }
+
+    function removeFrame(key) {
+      const frameObj = placedFrames.get(key);
+
+      if (frameObj) {
+        placementGroup.remove(frameObj);
+        placedFrames.delete(key);
+      }
+
+      const innerObj = placedInners.get(key);
+
+      if (innerObj) {
+        placementGroup.remove(innerObj);
+        placedInners.delete(key);
+      }
+
+      if (selectedKey === key) {
+        selectedKey = null;
+        selectedKind = null;
+      }
+    }
+
+    function removeInner(key) {
+      const innerObj = placedInners.get(key);
+
+      if (!innerObj) return;
+
+      placementGroup.remove(innerObj);
+      placedInners.delete(key);
+
+      if (selectedKey === key && selectedKind === 'inner') {
+        selectedKey = null;
+        selectedKind = null;
+      }
+    }
+
+    function clearCurrentLayer() {
+      const frameKeys = [...placedFrames.keys()].filter(
+        key => Number(key.split(':')[0]) === currentLayer
+      );
+
+      const innerKeys = [...placedInners.keys()].filter(
+        key => Number(key.split(':')[0]) === currentLayer
+      );
+
+      for (const key of frameKeys) {
+        removeFrame(key);
+      }
+
+      for (const key of innerKeys) {
+        removeInner(key);
+      }
+
+      selectedKey = null;
+      selectedKind = null;
+      updateStatus();
+    }
+
+    function clearAllLayout() {
+      for (const obj of placedFrames.values()) {
+        placementGroup.remove(obj);
+      }
+
+      for (const obj of placedInners.values()) {
+        placementGroup.remove(obj);
+      }
+
+      placedFrames.clear();
+      placedInners.clear();
+
+      selectedKey = null;
+      selectedKind = null;
+
+      updateStatus();
+    }
+
+    function getRequiredRadiusFromLayout(layout) {
+      let requiredRadius = 1;
+
+      for (const item of layout) {
+        const q = Number(item.q);
+        const r = Number(item.r);
+
+        if (!Number.isFinite(q) || !Number.isFinite(r)) continue;
+
+        const s = -q - r;
+        const cellRadius = Math.max(Math.abs(q), Math.abs(r), Math.abs(s));
+
+        requiredRadius = Math.max(requiredRadius, cellRadius);
+      }
+
+      return requiredRadius;
+    }
+
+    function updateGridRadiusForImportedLayout(layout) {
+      const requiredRadius = getRequiredRadiusFromLayout(layout);
+      const currentMax = Number(radiusRange.max);
+
+      if (requiredRadius > currentMax) {
+        radiusRange.max = String(requiredRadius);
+      }
+
+      if (requiredRadius !== gridRadius) {
+        gridRadius = requiredRadius;
+        radiusRange.value = String(requiredRadius);
+        buildGrid();
+      }
+    }
+
+    function importLayoutFromJson(layout) {
+      if (!Array.isArray(layout)) {
+        status.textContent = '导入失败：JSON 顶层必须是数组。';
+        return;
+      }
+
+      if (!frameTemplate || !innerTemplate) {
+        status.textContent = '模型还没有加载完成，请稍后再导入。';
+        return;
+      }
+
+      updateGridRadiusForImportedLayout(layout);
+      clearAllLayout();
+
+      let importedFrameCount = 0;
+      let importedInnerCount = 0;
+      let skippedCount = 0;
+
+      for (const item of layout) {
+        const layer = Number(item.layer);
+        const q = Number(item.q);
+        const r = Number(item.r);
+
+        if (
+          !Number.isInteger(layer) ||
+          !Number.isInteger(q) ||
+          !Number.isInteger(r) ||
+          layer < 0 ||
+          layer >= CONFIG.layerCount
+        ) {
+          skippedCount++;
+          continue;
+        }
+
+        const hasFrame = item.hasFrame === true;
+        const hasInner = item.hasInner === true;
+
+        if (hasFrame) {
+          const ok = addImportedFrame(layer, q, r);
+          if (ok) importedFrameCount++;
+        }
+
+        if (hasInner) {
+          const ok = addImportedInner(layer, q, r);
+          if (ok) importedInnerCount++;
+        }
+      }
+
+      selectedKey = null;
+      selectedKind = null;
+
+      refreshLayerVisibility();
+      updateStatus();
+
+      status.textContent =
+        `导入完成：框架 ${importedFrameCount} 个，内部房体 ${importedInnerCount} 个` +
+        (skippedCount > 0 ? `，跳过无效数据 ${skippedCount} 条。` : '。');
+    }
+
+    function refreshLayerVisibility() {
+      for (const [, cell] of cells) {
+        const layer = cell.userData.layer;
+        const isBaseLayer = layer === 0;
+
+        cell.visible = gridVisible || isBaseLayer;
+
+        const style = getGridCellStyle(layer);
+
+        cell.material.color.setHex(style.fillColor);
+        cell.material.opacity = style.fillOpacity;
+
+        if (cell.children[0]?.material) {
+          if (!gridVisible && isBaseLayer) {
+            cell.children[0].material.color.setHex(style.fillColor);
+            cell.children[0].material.opacity = style.fillOpacity;
+          } else {
+            cell.children[0].material.color.setHex(style.edgeColor);
+            cell.children[0].material.opacity = style.edgeOpacity;
+          }
+        }
+      }
+
+      axesHelper.visible = gridVisible;
+
+      for (const [key, obj] of placedFrames) {
+        const [layer] = key.split(':').map(Number);
+
+        obj.visible = true;
+
+        setObjectEmphasis(obj, {
+          selected: key === selectedKey && selectedKind === 'frame',
+          activeLayer: layer === currentLayer,
+          kind: 'frame'
+        });
+      }
+
+      for (const [key, obj] of placedInners) {
+        const [layer] = key.split(':').map(Number);
+
+        obj.visible = true;
+
+        setObjectEmphasis(obj, {
+          selected: key === selectedKey && selectedKind === 'inner',
+          activeLayer: layer === currentLayer,
+          kind: 'inner'
+        });
+      }
+    }
+
+    function getIntersections(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const placedHits = raycaster.intersectObjects(placementGroup.children, true);
+
+      const currentLayerCells = [...cells.values()].filter(
+        cell => cell.userData.layer === currentLayer
+      );
+
+      const cellHits = raycaster.intersectObjects(currentLayerCells, false);
+
+      return {
+        placedHits,
+        cellHits
+      };
+    }
+
+    function handleSceneClick(event) {
+      const { placedHits, cellHits } = getIntersections(event);
+      const mode = placeModeSelect.value;
+
+      if (cellHits.length > 0) {
+        placeByMode(cellHits[0].object.userData);
+        return;
+      }
+
+      if (placedHits.length > 0) {
+        const hit = placedHits[0].object;
+        const hitKey = hit.userData.parentKey || hit.userData.key;
+        const hitKind = hit.userData.kind;
+
+        if (!hitKey || !hitKind) return;
+
+        const [hitLayer] = hitKey.split(':').map(Number);
+
+        if (hitLayer === currentLayer) {
+          selectObject(hitKey, hitKind);
+          return;
+        }
+
+        const currentLayerCellData = makeCurrentLayerCellDataFromKey(hitKey);
+        const currentKey = currentLayerCellData.key;
+
+        if (mode === 'frame') {
+          if (placedFrames.has(currentKey)) {
+            selectObject(currentKey, 'frame');
+          } else {
+            placeFrame(currentLayerCellData);
+          }
+
+          return;
+        }
+
+        if (mode === 'inner') {
+          if (placedInners.has(currentKey)) {
+            selectObject(currentKey, 'inner');
+          } else {
+            placeInner(currentLayerCellData);
+          }
+        }
+      }
+    }
+
+    function bindEvents() {
+      layerSelect.addEventListener('change', () => {
+        switchLayer(Number(layerSelect.value));
+      });
+
+      placeModeSelect.addEventListener('change', () => {
+        updateStatus();
+      });
+
+      radiusRange.addEventListener('input', () => {
+        gridRadius = Number(radiusRange.value);
+        buildGrid();
+      });
+
+      renderer.domElement.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+
+        pointerDownInfo = {
+          x: event.clientX,
+          y: event.clientY,
+          pointerId: event.pointerId
+        };
+      });
+
+      renderer.domElement.addEventListener('pointerup', event => {
+        if (event.button !== 0) return;
+        if (!pointerDownInfo) return;
+
+        const dx = event.clientX - pointerDownInfo.x;
+        const dy = event.clientY - pointerDownInfo.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        const isRealClick = distance <= CONFIG.clickMoveTolerance;
+
+        pointerDownInfo = null;
+
+        if (!isRealClick) {
+          return;
+        }
+
+        handleSceneClick(event);
+      });
+
+      renderer.domElement.addEventListener('pointerleave', () => {
+        pointerDownInfo = null;
+      });
+
+      renderer.domElement.addEventListener('pointercancel', () => {
+        pointerDownInfo = null;
+      });
+
+      renderer.domElement.addEventListener('contextmenu', event => {
+        event.preventDefault();
+
+        const { placedHits } = getIntersections(event);
+
+        if (placedHits.length > 0) {
+          const hit = placedHits[0].object;
+          const key = hit.userData.parentKey || hit.userData.key;
+          const kind = hit.userData.kind;
+
+          if (key && kind) {
+            removeObject(key, kind);
+          }
+        }
+      });
+
+      deleteBtn.addEventListener('click', () => {
+        if (selectedKey && selectedKind) {
+          removeObject(selectedKey, selectedKind);
+        }
+      });
+
+      clearBtn.addEventListener('click', clearCurrentLayer);
+
+      clearAllBtn.addEventListener('click', () => {
+        clearAllLayout();
+        status.textContent = '已清空全部布局。';
+      });
+
+      toggleGridBtn.addEventListener('click', () => {
+        gridVisible = !gridVisible;
+        refreshLayerVisibility();
+        updateStatus();
+      });
+
+      exportBtn.addEventListener('click', () => {
+        const allKeys = new Set([
+          ...placedFrames.keys(),
+          ...placedInners.keys()
+        ]);
+
+        const layout = [...allKeys].map(key => {
+          const [layer, q, r] = key.split(':').map(Number);
+          const position = axialToWorld(q, r, layer);
+
+          return {
+            layer,
+            q,
+            r,
+            x: position.x,
+            y: position.y,
+            z: position.z,
+            hasFrame: placedFrames.has(key),
+            hasInner: placedInners.has(key),
+            frameModel: placedFrames.has(key) ? CONFIG.frameUrl : null,
+            innerModel: placedInners.has(key) ? CONFIG.innerUrl : null,
+            scale: CONFIG.modelScale
+          };
+        });
+
+        const blob = new Blob([JSON.stringify(layout, null, 2)], {
+          type: 'application/json'
+        });
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+
+        a.href = url;
+        a.download = 'house_layout.json';
+        a.click();
+
+        URL.revokeObjectURL(url);
+      });
+
+      importBtn.addEventListener('click', () => {
+        importFileInput.value = '';
+        importFileInput.click();
+      });
+
+      importFileInput.addEventListener('change', event => {
+        const file = event.target.files?.[0];
+
+        if (!file) return;
+
+        const reader = new FileReader();
+
+        reader.onload = () => {
+          try {
+            const json = JSON.parse(reader.result);
+            importLayoutFromJson(json);
+          } catch (error) {
+            console.error(error);
+            status.textContent = '导入失败：JSON 文件格式不正确。';
+          }
+        };
+
+        reader.onerror = () => {
+          status.textContent = '导入失败：无法读取文件。';
+        };
+
+        reader.readAsText(file, 'utf-8');
+      });
+
+      window.addEventListener('keydown', event => {
+        const activeElement = document.activeElement;
+        const activeTagName = activeElement?.tagName?.toLowerCase();
+
+        const isTypingOrUsingControl =
+          activeTagName === 'input' ||
+          activeTagName === 'textarea' ||
+          activeTagName === 'select' ||
+          activeTagName === 'button' ||
+          activeElement?.isContentEditable;
+
+        if (isTypingOrUsingControl) {
+          return;
+        }
+
+        const keyNumber = Number(event.key);
+
+        if (
+          Number.isInteger(keyNumber) &&
+          keyNumber >= 1 &&
+          keyNumber <= CONFIG.layerCount
+        ) {
+          event.preventDefault();
+          switchLayer(keyNumber - 1);
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+
+    function updateStatus() {
+      const totalCells = cells.size;
+      const frameCount = placedFrames.size;
+      const innerCount = placedInners.size;
+
+      const layerFrameCount = [...placedFrames.keys()].filter(
+        key => Number(key.split(':')[0]) === currentLayer
+      ).length;
+
+      const layerInnerCount = [...placedInners.keys()].filter(
+        key => Number(key.split(':')[0]) === currentLayer
+      ).length;
+
+      const modeText = placeModeSelect.value === 'frame'
+        ? '框架'
+        : '内部房体';
+
+      const selectedText = selectedKey
+        ? `｜选中：${selectedKind} ${selectedKey}`
+        : '';
+
+      const gridText = gridVisible
+        ? '网格显示'
+        : '仅显示底面网格';
+
+      status.textContent =
+        `当前层：第 ${currentLayer + 1} 层` +
+        `｜放置类型：${modeText}` +
+        `｜${gridText}` +
+        `｜网格半径：${gridRadius}` +
+        `｜总格子：${totalCells}` +
+        `｜框架 总数：${frameCount}` +
+        `｜内部房体 总数：${innerCount}` +
+        `｜当前层 框架：${layerFrameCount}` +
+        `｜当前层 内部房体：${layerInnerCount}`
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
